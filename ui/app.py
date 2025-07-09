@@ -1,14 +1,18 @@
-# --- make parent folder importable on Streamlit Cloud ---
+# ── import path shim: lets Streamlit Cloud find the sibling package ────────────
 import sys, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent
 if str(root) not in sys.path:
     sys.path.insert(0, str(root))
-# --------------------------------------------------------
+# ───────────────────────────────────────────────────────────────────────────────
 
-from apt_finder.config import get_settings   # ← existing import keeps working
-from apt_finder.zillow import pull as pull_zillow      # ← NEW
-from apt_finder.enrich import enrich_props             # ← NEW
-from apt_finder.ranking import rank_listings           # ← NEW
+import streamlit as st                    # ← make sure this line is present
+import pandas as pd
+from typing import List, Optional
+
+from apt_finder.config import get_settings
+from apt_finder.zillow import pull as pull_zillow
+from apt_finder.enrich import enrich_props
+from apt_finder.ranking import rank_listings
 
 cfg = get_settings()
 st.set_page_config(page_title="Apartment Finder", layout="wide", page_icon="🏠")
