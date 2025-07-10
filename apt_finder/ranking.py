@@ -1,13 +1,12 @@
 """
 apt_finder.ranking
 ------------------
-LLM-based stack-ranking with automatic fallback:
+LLM-based stack-ranking with graceful degradation.
 
-• Sends at most MAX_LISTINGS listings to OpenAI to stay under token limits.
-• Retries up to MAX_RETRIES on any OpenAI error (rate-limit, transient, etc.)
-  with exponential back-off (1 s · 2ⁿ).
-• If the API still fails, falls back to a deterministic local sort so
-  the UI never crashes.
+• Sends at most MAX_LISTINGS rows to OpenAI.
+• Retries on *any* OpenAIError up to MAX_RETRIES with exponential back-off.
+• If the response isn't valid JSON or the API keeps failing, falls back to a
+  deterministic local sort so the UI never crashes.
 """
 
 from __future__ import annotations
@@ -23,13 +22,13 @@ from .config import get_settings
 settings = get_settings()
 client = OpenAI(api_key=settings.openai_api_key)
 
-MAX_LISTINGS = 20          # protect token quota
-MAX_RETRIES = 3            # OpenAI attempts (1 original + 2 retries)
-BACKOFF_S = 1              # initial sleep on error
+MAX_LISTINGS = 20
+MAX_RETRIES = 3
+BACKOFF_S = 1
 
 
 def _call_openai(payload: str) -> str:
-    """Single API invocation. Returns raw JSON string from the model."""
+    """Single API call—returns raw JSON string (or junk)."""
     return client.chat.completions.create(
         model=settings.openai_model,
         messages=[
@@ -41,7 +40,7 @@ def _call_openai(payload: str) -> str:
                     "Weight highest-to-lowest:\n"
                     "1. Larger radius_bonus (9 %, 7 %, 5 %).\n"
                     "2. Greater places_cnt.\n\n"
-                    "Return JSON only with address, listing, radius_bonus, "
+                    "Return *JSON only* with address, listing, radius_bonus, "
                     "places_cnt, nearest_poi, nearest_poi_dist_mi, rank."
                 ),
             },
@@ -51,40 +50,37 @@ def _call_openai(payload: str) -> str:
     ).choices[0].message.content
 
 
-def _fallback_sort(listings: List[Dict]) -> List[Dict]:
-    """Deterministic rank when OpenAI is unavailable."""
+def _fallback_sort(rows: List[Dict]) -> List[Dict]:
     ranked = sorted(
-        listings,
-        key=lambda x: (-x.get("radius_bonus", 0), -x.get("places_cnt", 0)),
+        rows, key=lambda x: (-x.get("radius_bonus", 0), -x.get("places_cnt", 0))
     )
-    for idx, row in enumerate(ranked, 1):
-        row["rank"] = idx
+    for i, r in enumerate(ranked, 1):
+        r["rank"] = i
     return ranked
 
 
 def rank_listings(listings: List[Dict]) -> List[Dict]:
-    """
-    Public helper used by ui/app.py.
-    Always returns a ranked list—never raises OpenAI errors.
-    """
-    short_list = listings[:MAX_LISTINGS]
-    payload = json.dumps(short_list, ensure_ascii=False)
+    trimmed = listings[:MAX_LISTINGS]
+    payload = json.dumps(trimmed, ensure_ascii=False)
 
     backoff = BACKOFF_S
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            ranked_json = _call_openai(payload)
-            ranked = json.loads(ranked_json)
-            break  # ✅ success; exit retry-loop
-        except (RateLimitError, OpenAIError) as e:
+            raw_json = _call_openai(payload)
+            ranked = json.loads(raw_json)            # ← may raise JSONDecodeError
+            break  # success
+        except json.JSONDecodeError:
+            print(f"[WARN] OpenAI responded with invalid JSON on attempt {attempt}")
+            # don't retry—go straight to fallback
+            ranked = _fallback_sort(trimmed)
+            break
+        except (OpenAIError, RateLimitError) as e:
             if attempt == MAX_RETRIES:
-                # Log and degrade gracefully
-                print(f"[WARN] OpenAI error after {attempt} attempts → {e}")
-                ranked = _fallback_sort(short_list)
+                print(f"[WARN] OpenAI failed after {attempt} tries: {e}")
+                ranked = _fallback_sort(trimmed)
                 break
             time.sleep(backoff)
-            backoff *= 2  # exponential back-off
+            backoff *= 2
 
-    # merge OpenAI results with original fields (price, distance, etc.)
-    by_addr = {l["address"]: l for l in short_list}
+    by_addr = {l["address"]: l for l in trimmed}
     return [{**by_addr.get(r["address"], {}), **r} for r in ranked]

@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     app_password: str
 
     # POI defaults
-    default_place_types: list[str] = ["bakery"]       # <— NEW
+    default_place_types: list[str] = ["bar"]       # <— NEW
     google_places_radius_m: PositiveInt = 800
 
-    openai_model: str = "o3"
+    openai_model: str = "gpt-4.1"
 
     class Config:
         env_file = ".env"

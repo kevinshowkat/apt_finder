@@ -1,10 +1,11 @@
+# --- keep existing imports ---
 import time, sys, requests
 from typing import List, Dict, Union, Optional
 
 from .config import get_settings
 settings = get_settings()
 
-MAX_ZILLOW_RESULTS = 100                # <<<  ADD / CONFIRM this line
+MAX_ZILLOW_RESULTS = 100          # ← NEW constant
 
 ZILLOW_EP = "/propertyExtendedSearch"
 ZILLOW_HOSTS = [
@@ -44,12 +45,9 @@ def _params(coords: str, page: int, rent_min: int, rent_max: int) -> Dict[str, U
     }
 
 
-def pull(coords: str, rent_min: int, rent_max: int) -> List[Dict]:
-    """
-    Return a list of Zillow listings, capped at 100 rows for performance.
-    """
+def pull(coords: str, rent_min: int, rent_max: int) -> tuple[int, list[dict]]:
+    total, out, page = 0, [], 1
     for host in ZILLOW_HOSTS:
-        page, out = 1, []
         try:
             while True:
                 r = requests.get(
@@ -59,15 +57,22 @@ def pull(coords: str, rent_min: int, rent_max: int) -> List[Dict]:
                     timeout=20,
                 )
                 r.raise_for_status()
-                batch = r.json().get("props", [])
+                payload = r.json()
+                batch = payload.get("props", [])
                 if not batch:
                     break
+
+                # use Zillow’s count if present, else keep growing our own
+                z_count = payload.get("totalResultCount")
+                total = max(total, z_count or 0, len(out) + len(batch))
+
                 out += batch
-                if len(out) >= MAX_ZILLOW_RESULTS:          # ← stop early
+                if len(out) >= MAX_ZILLOW_RESULTS:
                     out = out[:MAX_ZILLOW_RESULTS]
                     break
                 page += 1
-            return out
+            return total, out
         except requests.HTTPError:
             continue
-    return []
+    return total, out
+

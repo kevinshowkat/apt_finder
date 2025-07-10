@@ -1,5 +1,6 @@
 import requests, re
 from typing import Dict, List, Tuple, Union, Optional
+from math import inf
 
 from geopy.distance import geodesic        # ← ADD this line
 from math import inf
@@ -79,6 +80,7 @@ def nearby_pois(lat: float, lon: float, place_types: list[str]) -> Dict[str, Uni
     }
 
 
+# --- NEW helper --------------------------------------------------------------
 # ------------------  REPLACE the existing helper  -------------------
 def walking_distance_miles(
     lat: float, lon: float, office_lat: float, office_lon: float

@@ -16,7 +16,7 @@ from apt_finder.enrich import enrich_props
 from apt_finder.ranking import rank_listings
 
 cfg = get_settings()
-st.set_page_config(page_title="Apartment Finder", layout="wide", page_icon="🏠")
+st.set_page_config(page_title="Proximity Scan", layout="wide", page_icon="🔎")
 
 # -------- password gate --------
 if "auth" not in st.session_state:
@@ -58,23 +58,22 @@ sel_types: List[str] = st.sidebar.multiselect(
 
 run_btn = st.sidebar.button("🔍  Search now")
 
-st.title("🏠 Apartment Finder near 345 N Maple 👀")
+st.title("🔎 Proximity Scan 👀")
 st.markdown(
-    f"Showing rentals within **{radius} mi** of the office "
-    f"({cfg.office_lat:.4f}, {cfg.office_lon:.4f})."
+    f"Showing rentals within **{radius} mi** of 345 N Maple"
 )
 
 # ---------- run search ----------
 if run_btn:
-    cfg = get_settings()                # reuse cached settings
+    cfg = get_settings()                 # keep this
+    coords = f"{cfg.office_lon} {cfg.office_lat},{radius * 2}"   # ← MOVE HERE
 
-    # nice vertical card with live updates
     with st.status("Starting search…", expanded=True) as status:
+
         # 1 · Zillow pull
         status.update(label="Pulling Zillow listings…")
-        coords = f"{cfg.office_lon} {cfg.office_lat},{radius * 2}"
-        raw = pull_zillow(coords, rent_min, rent_max)
-        status.write(f"• Pulled **{len(raw)} / {MAX_ZILLOW_RESULTS}** Zillow listings")
+        total_raw, raw = pull_zillow(coords, rent_min, rent_max)
+        status.write(f"• Pulled **{len(raw)} / {total_raw}** Zillow listings")
 
         # 2 · Enrich + filter
         status.update(label="Enriching with Google Places + filters…")
@@ -96,7 +95,7 @@ if run_btn:
             st.stop()
 
         # 3 · Ranking
-        status.update(label="Ranking with OpenAI o3…")
+        status.update(label="Ranking with OpenAI gpt-4.1")
         df = pd.DataFrame(rank_listings(enriched)).sort_values("rank")
         status.write("• Ranking complete")
         status.update(state="complete", label="Done! 🎉")
