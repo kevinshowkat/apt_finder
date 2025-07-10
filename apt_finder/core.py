@@ -33,6 +33,5 @@ def search_and_rank(
     if not enriched:
         return pd.DataFrame()
 
-    rank_input = enriched[:20]
-    ranked = rank_listings(rank_input)
+    ranked = rank_listings(enriched)
     return pd.DataFrame(ranked).sort_values("rank")
