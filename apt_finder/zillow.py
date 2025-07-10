@@ -1,10 +1,10 @@
 import time, sys, requests
-from typing import Optional
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional
 
 from .config import get_settings
-
 settings = get_settings()
+
+MAX_ZILLOW_RESULTS = 100                # <<<  ADD / CONFIRM this line
 
 ZILLOW_EP = "/propertyExtendedSearch"
 ZILLOW_HOSTS = [
@@ -46,7 +46,7 @@ def _params(coords: str, page: int, rent_min: int, rent_max: int) -> Dict[str, U
 
 def pull(coords: str, rent_min: int, rent_max: int) -> List[Dict]:
     """
-    Return a raw list of Zillow listings (may be empty).
+    Return a list of Zillow listings, capped at 100 rows for performance.
     """
     for host in ZILLOW_HOSTS:
         page, out = 1, []
@@ -58,19 +58,16 @@ def pull(coords: str, rent_min: int, rent_max: int) -> List[Dict]:
                     params=_params(coords, page, rent_min, rent_max),
                     timeout=20,
                 )
-                if r.status_code == 403:
-                    raise PermissionError
                 r.raise_for_status()
                 batch = r.json().get("props", [])
                 if not batch:
                     break
                 out += batch
+                if len(out) >= MAX_ZILLOW_RESULTS:          # ← stop early
+                    out = out[:MAX_ZILLOW_RESULTS]
+                    break
                 page += 1
-                time.sleep(0.25)
             return out
-        except PermissionError:
-            print(f"[WARN] 403 from {host}; trying next host.")
-        except requests.HTTPError as e:
-            print(f"[WARN] {host} → HTTP {e.response.status_code}; skipping.")
-    print("[FATAL] All Zillow hosts rejected your key.")
+        except requests.HTTPError:
+            continue
     return []

@@ -1,11 +1,14 @@
 import requests, re
 from typing import Dict, List, Tuple, Union, Optional
-from geopy.distance import geodesic
 
+from geopy.distance import geodesic        # ← ADD this line
+from math import inf
+from math import radians, cos, sin, asin, sqrt   # if you use haversine
+
+from apt_finder.zillow import _clean_zillow_url
 from .config import get_settings
-from .zillow import _clean_zillow_url      # ← ADD THIS
-
 settings = get_settings()
+
 BAR_RADIUS_M = settings.google_places_radius_m
 
 UNIT_RE = re.compile(
@@ -76,6 +79,47 @@ def nearby_pois(lat: float, lon: float, place_types: list[str]) -> Dict[str, Uni
     }
 
 
+# ------------------  REPLACE the existing helper  -------------------
+def walking_distance_miles(
+    lat: float, lon: float, office_lat: float, office_lon: float
+) -> Optional[float]:
+    """
+    Returns walking distance (miles) via Google Directions API.
+    Gracefully falls back to None when no route is found.
+    """
+    params = {
+        "origin":      f"{lat},{lon}",
+        "destination": f"{office_lat},{office_lon}",
+        "mode":        "walking",
+        "key":         settings.places_api_key,
+    }
+    try:
+        r = requests.get(
+            "https://maps.googleapis.com/maps/api/directions/json",
+            params=params,
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        routes = data.get("routes", [])
+        if not routes:
+            return None                     # ← no routes, bail out
+
+        legs = routes[0].get("legs", [])
+        if not legs:
+            return None                     # ← unexpected shape
+
+        meters = legs[0]["distance"]["value"]
+        return meters / 1609.34             # meters → miles
+    except Exception as e:
+        print(f"[WARN] Directions API error @({lat:.4f},{lon:.4f}): {e}")
+        return None
+# --------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+
+
 def enrich_props(
     props: List[Dict],
     centre: Tuple[float, float],
@@ -84,21 +128,26 @@ def enrich_props(
     max_rent: int,
     place_types: list[str],
 ) -> List[Dict]:
+    office_lat, office_lon = centre       # unpack once
     good = []
+
     for p in props:
         lat, lon = p.get("latitude"), p.get("longitude")
-        if not lat or not lon:
+        if lat is None or lon is None:
             continue
-        dist = round(geodesic((lat, lon), centre).miles, 3)
-        if dist > radius_mi:
+
+        # use walking distance instead of straight‑line geodesic
+        dist = walking_distance_miles(lat, lon, office_lat, office_lon)
+        if dist is None or dist > radius_mi:
             continue
+
         if not _price_ok(p.get("price"), min_rent, max_rent):
             continue
 
         poi_info = nearby_pois(lat, lon, place_types)
 
         listing_url = _clean_zillow_url(p.get("detailUrl"))
-        if listing_url is None:        # skip non-Zillow listings
+        if listing_url is None:
             continue
 
         enriched = {
@@ -106,7 +155,7 @@ def enrich_props(
             "price": p.get("price"),
             "latitude": lat,
             "longitude": lon,
-            "distance": dist,
+            "distance": round(dist, 2),         # walking miles
             "radius_bonus": _radius_bonus(dist),
             "listing": listing_url,
             **poi_info,

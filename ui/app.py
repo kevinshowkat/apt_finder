@@ -10,6 +10,7 @@ import pandas as pd
 from typing import List, Optional
 
 from apt_finder.config import get_settings
+from apt_finder.zillow import MAX_ZILLOW_RESULTS
 from apt_finder.zillow import pull as pull_zillow
 from apt_finder.enrich import enrich_props
 from apt_finder.ranking import rank_listings
@@ -32,18 +33,18 @@ if not st.session_state.auth:
 
 # -------- sidebar controls --------
 st.sidebar.header("Search settings")
-radius = st.sidebar.slider("Radius (miles)", 0.5, 5.0, cfg.radius_mi, 0.5)
+radius = st.sidebar.slider("Radius (miles)", 0.0, 3.0, cfg.radius_mi, 0.25)
 rent_min, rent_max = st.sidebar.slider(
     "Budget ($/month)", 500, 8000, (cfg.min_rent, cfg.max_rent), 100
 )
 
 # NEW: multiselect for Places types
 place_options = [
+    "gym",
     "bar",
     "restaurant",
     "cafe",
     "bakery",
-    "gym",
     "park",
     "night_club",
     "movie_theater",
@@ -73,7 +74,7 @@ if run_btn:
         status.update(label="Pulling Zillow listings…")
         coords = f"{cfg.office_lon} {cfg.office_lat},{radius * 2}"
         raw = pull_zillow(coords, rent_min, rent_max)
-        status.write(f"• Pulled **{len(raw)}** raw listings from Zillow")
+        status.write(f"• Pulled **{len(raw)} / {MAX_ZILLOW_RESULTS}** Zillow listings")
 
         # 2 · Enrich + filter
         status.update(label="Enriching with Google Places + filters…")
