@@ -1,0 +1,7 @@
+[theme]
+base="dark"
+primaryColor="#1A73E8"            # Google-blue buttons
+backgroundColor="#1E1E1E"
+secondaryBackgroundColor="#242424"
+textColor="#FFFFFF"
+font="sans serif"
