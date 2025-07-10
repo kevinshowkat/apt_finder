@@ -40,11 +40,11 @@ rent_min, rent_max = st.sidebar.slider(
 
 # NEW: multiselect for Places types
 place_options = [
-    "gym",
     "bar",
     "restaurant",
     "cafe",
     "bakery",
+    "gym",
     "park",
     "night_club",
     "movie_theater",
